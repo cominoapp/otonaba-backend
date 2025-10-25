@@ -4,7 +4,7 @@ import { authenticateToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// 받은 메시지 목록 조회
+// 受信メッセージ一覧
 router.get('/inbox', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -12,25 +12,22 @@ router.get('/inbox', authenticateToken, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT 
         m.id, m.subject, m.content, m.is_read, m.created_at,
-        u.nickname as sender_nickname, u.age_group as sender_age_group, m.sender_id,
-        COUNT(mr.id) as reply_count
+        u.nickname as sender_nickname, u.age_group as sender_age_group, m.sender_id
       FROM messages m
       JOIN users u ON m.sender_id = u.id
-      LEFT JOIN message_replies mr ON m.id = mr.message_id
       WHERE m.receiver_id = $1
-      GROUP BY m.id, u.nickname, u.age_group
       ORDER BY m.created_at DESC`,
       [userId]
     );
 
     res.json(result.rows);
   } catch (error) {
-    console.error('받은 메시지 조회 실패:', error);
+    console.error('受信メッセージ取得失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
 
-// 보낸 메시지 목록 조회
+// 送信メッセージ一覧
 router.get('/sent', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -38,31 +35,27 @@ router.get('/sent', authenticateToken, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT 
         m.id, m.subject, m.content, m.is_read, m.created_at,
-        u.nickname as receiver_nickname, u.age_group as receiver_age_group, m.receiver_id,
-        COUNT(mr.id) as reply_count
+        u.nickname as receiver_nickname, u.age_group as receiver_age_group, m.receiver_id
       FROM messages m
       JOIN users u ON m.receiver_id = u.id
-      LEFT JOIN message_replies mr ON m.id = mr.message_id
       WHERE m.sender_id = $1
-      GROUP BY m.id, u.nickname, u.age_group
       ORDER BY m.created_at DESC`,
       [userId]
     );
 
     res.json(result.rows);
   } catch (error) {
-    console.error('보낸 메시지 조회 실패:', error);
+    console.error('送信メッセージ取得失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
 
-// 메시지 상세 조회 (답글 포함)
+// メッセージ詳細
 router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // 메시지 조회
     const messageResult = await pool.query(
       `SELECT 
         m.*,
@@ -81,35 +74,23 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
 
     const message = messageResult.rows[0];
 
-    // 읽음 처리 (받는 사람이 조회할 때만)
+    // 既読処理
     if (message.receiver_id === userId && !message.is_read) {
       await pool.query('UPDATE messages SET is_read = TRUE WHERE id = $1', [id]);
       message.is_read = true;
     }
 
-    // 답글 조회
-    const repliesResult = await pool.query(
-      `SELECT 
-        mr.id, mr.content, mr.created_at, mr.user_id,
-        u.nickname, u.age_group
-      FROM message_replies mr
-      JOIN users u ON mr.user_id = u.id
-      WHERE mr.message_id = $1
-      ORDER BY mr.created_at ASC`,
-      [id]
-    );
-
     res.json({
       ...message,
-      replies: repliesResult.rows
+      replies: [] // 답글 기능은 나중에 추가
     });
   } catch (error) {
-    console.error('메시지 상세 조회 실패:', error);
+    console.error('メッセージ詳細取得失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
 
-// 메시지 보내기
+// メッセージ送信
 router.post('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { receiver_id, subject, content } = req.body;
@@ -123,7 +104,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
       return res.status(400).json({ message: '自分にメッセージを送ることはできません' });
     }
 
-    // 받는 사람 존재 확인
+    // 受信者確認
     const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [receiver_id]);
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ message: 'ユーザーが見つかりません' });
@@ -138,70 +119,17 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('메시지 전송 실패:', error);
+    console.error('メッセージ送信失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
 
-// 메시지 답글 작성
-router.post('/:id/reply', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { content } = req.body;
-    const userId = (req as any).user.id;
-
-    if (!content || !content.trim()) {
-      return res.status(400).json({ message: '返信内容を入力してください' });
-    }
-
-    // 메시지 존재 및 권한 확인
-    const messageCheck = await pool.query(
-      'SELECT sender_id, receiver_id FROM messages WHERE id = $1',
-      [id]
-    );
-
-    if (messageCheck.rows.length === 0) {
-      return res.status(404).json({ message: 'メッセージが見つかりません' });
-    }
-
-    const { sender_id, receiver_id } = messageCheck.rows[0];
-    if (sender_id !== userId && receiver_id !== userId) {
-      return res.status(403).json({ message: '権限がありません' });
-    }
-
-    // 답글 작성
-    const result = await pool.query(
-      `INSERT INTO message_replies (message_id, user_id, content)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [id, userId, content]
-    );
-
-    // 답글 작성자 정보 포함
-    const replyWithUser = await pool.query(
-      `SELECT 
-        mr.id, mr.content, mr.created_at, mr.user_id,
-        u.nickname, u.age_group
-      FROM message_replies mr
-      JOIN users u ON mr.user_id = u.id
-      WHERE mr.id = $1`,
-      [result.rows[0].id]
-    );
-
-    res.status(201).json(replyWithUser.rows[0]);
-  } catch (error) {
-    console.error('답글 작성 실패:', error);
-    res.status(500).json({ message: 'サーバーエラーが発生しました' });
-  }
-});
-
-// 메시지 삭제
+// メッセージ削除
 router.delete('/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // 권한 확인 (받는 사람만 삭제 가능)
     const checkResult = await pool.query(
       'SELECT receiver_id FROM messages WHERE id = $1',
       [id]
@@ -219,12 +147,12 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
 
     res.json({ message: 'メッセージが削除されました' });
   } catch (error) {
-    console.error('메시지 삭제 실패:', error);
+    console.error('メッセージ削除失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
 
-// 안읽은 메시지 개수 조회
+// 未読メッセージ数
 router.get('/unread/count', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -236,7 +164,7 @@ router.get('/unread/count', authenticateToken, async (req: Request, res: Respons
 
     res.json({ count: parseInt(result.rows[0].count) });
   } catch (error) {
-    console.error('안읽은 메시지 개수 조회 실패:', error);
+    console.error('未読メッセージ数取得失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
