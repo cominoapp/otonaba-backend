@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { pool } from '../config/database.js';
 import { register, login } from '../controllers/authController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import { register, login, getProfile, changePassword, updateProfile } from '../controllers/authController.js';
 
 const router = express.Router();
 
@@ -49,3 +50,7 @@ router.put('/change-password', authenticateToken, async (req: Request, res: Resp
 });
 
 export default router;
+
+import { updateProfile } from '../controllers/authController.js';
+
+router.put('/profile', authenticateToken, updateProfile);
