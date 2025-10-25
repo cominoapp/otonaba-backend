@@ -14,7 +14,7 @@ router.get('/', async (req: Request, res: Response) => {
     let query = `
       SELECT 
         p.id, p.title, p.content, p.category, p.views, p.created_at,
-        u.nickname as author_nickname, u.age_group as author_age_group,
+        u.nickname as author_nickname, u.age_group as author_age_group, u.gender as author_gender, u.region as author_region,
         COUNT(DISTINCT c.id) as comment_count,
         COUNT(DISTINCT l.id) as like_count
       FROM posts p
