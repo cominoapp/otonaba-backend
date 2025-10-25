@@ -12,10 +12,13 @@ router.get('/inbox', authenticateToken, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT 
         m.id, m.subject, m.content, m.is_read, m.created_at,
-        u.nickname as sender_nickname, u.age_group as sender_age_group, m.sender_id
+        u.nickname as sender_nickname, u.age_group as sender_age_group, m.sender_id,
+        COUNT(mr.id) as reply_count
       FROM messages m
       JOIN users u ON m.sender_id = u.id
+      LEFT JOIN message_replies mr ON m.id = mr.message_id
       WHERE m.receiver_id = $1
+      GROUP BY m.id, u.nickname, u.age_group
       ORDER BY m.created_at DESC`,
       [userId]
     );
@@ -35,10 +38,13 @@ router.get('/sent', authenticateToken, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT 
         m.id, m.subject, m.content, m.is_read, m.created_at,
-        u.nickname as receiver_nickname, u.age_group as receiver_age_group, m.receiver_id
+        u.nickname as receiver_nickname, u.age_group as receiver_age_group, m.receiver_id,
+        COUNT(mr.id) as reply_count
       FROM messages m
       JOIN users u ON m.receiver_id = u.id
+      LEFT JOIN message_replies mr ON m.id = mr.message_id
       WHERE m.sender_id = $1
+      GROUP BY m.id, u.nickname, u.age_group
       ORDER BY m.created_at DESC`,
       [userId]
     );
@@ -50,12 +56,13 @@ router.get('/sent', authenticateToken, async (req: Request, res: Response) => {
   }
 });
 
-// メッセージ詳細
+// メッセージ詳細 (返信含む)
 router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
+    // メッセージ取得
     const messageResult = await pool.query(
       `SELECT 
         m.*,
@@ -80,9 +87,21 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
       message.is_read = true;
     }
 
+    // 返信取得
+    const repliesResult = await pool.query(
+      `SELECT 
+        mr.id, mr.content, mr.created_at, mr.user_id,
+        u.nickname, u.age_group
+      FROM message_replies mr
+      JOIN users u ON mr.user_id = u.id
+      WHERE mr.message_id = $1
+      ORDER BY mr.created_at ASC`,
+      [id]
+    );
+
     res.json({
       ...message,
-      replies: [] // 답글 기능은 나중에 추가
+      replies: repliesResult.rows
     });
   } catch (error) {
     console.error('メッセージ詳細取得失敗:', error);
@@ -120,6 +139,58 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('メッセージ送信失敗:', error);
+    res.status(500).json({ message: 'サーバーエラーが発生しました' });
+  }
+});
+
+// メッセージ返信作成
+router.post('/:id/reply', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    const userId = (req as any).user.id;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ message: '返信内容を入力してください' });
+    }
+
+    // メッセージ存在および権限確認
+    const messageCheck = await pool.query(
+      'SELECT sender_id, receiver_id FROM messages WHERE id = $1',
+      [id]
+    );
+
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'メッセージが見つかりません' });
+    }
+
+    const { sender_id, receiver_id } = messageCheck.rows[0];
+    if (sender_id !== userId && receiver_id !== userId) {
+      return res.status(403).json({ message: '権限がありません' });
+    }
+
+    // 返信作成
+    const result = await pool.query(
+      `INSERT INTO message_replies (message_id, user_id, content)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [id, userId, content]
+    );
+
+    // 返信作成者情報含む
+    const replyWithUser = await pool.query(
+      `SELECT 
+        mr.id, mr.content, mr.created_at, mr.user_id,
+        u.nickname, u.age_group
+      FROM message_replies mr
+      JOIN users u ON mr.user_id = u.id
+      WHERE mr.id = $1`,
+      [result.rows[0].id]
+    );
+
+    res.status(201).json(replyWithUser.rows[0]);
+  } catch (error) {
+    console.error('返信作成失敗:', error);
     res.status(500).json({ message: 'サーバーエラーが発生しました' });
   }
 });
