@@ -10,9 +10,9 @@ export const register = async (req: Request, res: Response) => {
 
     // バリデーション
     if (!email || !password || !nickname || !age_group || !gender || !region) {
-  return res.status(400).json({ 
-    success: false,
-    message: '全ての項目を入力してください'
+      return res.status(400).json({ 
+        success: false,
+        message: '全ての項目を入力してください'
       });
     }
 
@@ -36,9 +36,9 @@ export const register = async (req: Request, res: Response) => {
     // ユーザーを作成
     const result = await pool.query(
       `INSERT INTO users (email, password, nickname, age_group, gender, region) 
-   VALUES ($1, $2, $3, $4, $5, $6) 
-   RETURNING id, email, nickname, age_group, gender, region, trust_score, created_at`,
-  [email, hashedPassword, nickname, age_group, gender, region]
+       VALUES ($1, $2, $3, $4, $5, $6) 
+       RETURNING id, email, nickname, age_group, gender, region, trust_score, created_at`,
+      [email, hashedPassword, nickname, age_group, gender, region]
     );
 
     const user = result.rows[0];
@@ -59,6 +59,8 @@ export const register = async (req: Request, res: Response) => {
         email: user.email,
         nickname: user.nickname,
         age_group: user.age_group,
+        gender: user.gender,
+        region: user.region,
         trust_score: user.trust_score,
         created_at: user.created_at
       }
@@ -126,6 +128,8 @@ export const login = async (req: Request, res: Response) => {
         email: user.email,
         nickname: user.nickname,
         age_group: user.age_group,
+        gender: user.gender,
+        region: user.region,
         trust_score: user.trust_score
       }
     });
@@ -144,7 +148,7 @@ export const getProfile = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
 
     const result = await pool.query(
-      'SELECT id, email, nickname, age_group, trust_score, created_at FROM users WHERE id = $1',
+      'SELECT id, email, nickname, age_group, gender, region, trust_score, created_at FROM users WHERE id = $1',
       [userId]
     );
 
@@ -230,58 +234,6 @@ export const changePassword = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('パスワード変更エラー:', error);
-    res.status(500).json({
-      success: false,
-      message: 'サーバーエラーが発生しました'
-	  
-
-    });
-  }
-};
-
-// プロフィール更新
-export const updateProfile = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const { nickname, age_group, gender, region } = req.body;
-
-    // バリデーション
-    if (!nickname || !age_group || !gender || !region) {
-      return res.status(400).json({
-        success: false,
-        message: '全ての項目を入力してください'
-      });
-    }
-
-    // ニックネーム重複チェック (自分以外)
-    const nicknameCheck = await pool.query(
-      'SELECT id FROM users WHERE nickname = $1 AND id != $2',
-      [nickname, userId]
-    );
-
-    if (nicknameCheck.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'このニックネームは既に使用されています'
-      });
-    }
-
-    // プロフィール更新
-    const result = await pool.query(
-      `UPDATE users 
-       SET nickname = $1, age_group = $2, gender = $3, region = $4
-       WHERE id = $5
-       RETURNING id, email, nickname, age_group, gender, region, trust_score, created_at`,
-      [nickname, age_group, gender, region, userId]
-    );
-
-    res.json({
-      success: true,
-      message: 'プロフィールを更新しました',
-      user: result.rows[0]
-    });
-  } catch (error) {
-    console.error('プロフィール更新エラー:', error);
     res.status(500).json({
       success: false,
       message: 'サーバーエラーが発生しました'
