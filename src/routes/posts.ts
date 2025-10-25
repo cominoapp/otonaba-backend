@@ -4,10 +4,10 @@ import { authenticateToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// 게시글 목록 조회 (검색 + 카테고리 필터 + 댓글 개수 + 좋아요 개수)
+// 게시글 목록 조회 (검색 + 카테고리 필터 + 댓글 개수 + 좋아요 개수 + 이미지)
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { category, page = 1, limit = 3, search } = req.query;
+    const { category, page = 1, limit = 20, search } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
 
     let query = `
@@ -15,11 +15,22 @@ router.get('/', async (req: Request, res: Response) => {
         p.id, p.title, p.content, p.category, p.views, p.created_at,
         u.nickname as author_nickname, u.age_group as author_age_group, u.gender as author_gender, u.region as author_region,
         COUNT(DISTINCT c.id) as comment_count,
-        COUNT(DISTINCT l.id) as like_count
+        COUNT(DISTINCT l.id) as like_count,
+        COALESCE(
+          json_agg(
+            DISTINCT jsonb_build_object(
+              'id', pi.id,
+              'image_url', pi.image_url,
+              'cloudinary_id', pi.cloudinary_id
+            )
+          ) FILTER (WHERE pi.id IS NOT NULL),
+          '[]'
+        ) as images
       FROM posts p
       JOIN users u ON p.user_id = u.id
       LEFT JOIN comments c ON p.id = c.post_id
       LEFT JOIN likes l ON p.id = l.post_id
+      LEFT JOIN post_images pi ON p.id = pi.post_id
     `;
 
     const params: any[] = [];
