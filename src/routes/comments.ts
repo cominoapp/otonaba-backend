@@ -13,7 +13,7 @@ router.get('/posts/:postId', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT 
         c.id, c.content, c.created_at, c.updated_at, c.user_id,
-        u.nickname as author_nickname, u.age_group as author_age_group
+        u.nickname as author_nickname, u.age_group as author_age_group, u.gender as author_gender, u.region as author_region
       FROM comments c
       JOIN users u ON c.user_id = u.id
       WHERE c.post_id = $1
@@ -63,7 +63,7 @@ router.post('/posts/:postId', authenticateToken, async (req: Request, res: Respo
     const commentWithUser = await pool.query(
       `SELECT 
         c.id, c.post_id, c.user_id, c.content, c.created_at, c.updated_at,
-        u.nickname as author_nickname, u.age_group as author_age_group
+        u.nickname as author_nickname, u.age_group as author_age_group, u.gender as author_gender, u.region as author_region
       FROM comments c
       JOIN users u ON c.user_id = u.id
       WHERE c.id = $1`,
@@ -125,7 +125,7 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT 
         c.id, c.content, c.created_at, c.updated_at, c.user_id,
-        u.nickname as author_nickname, u.age_group as author_age_group
+        u.nickname as author_nickname, u.age_group as author_age_group, u.gender as author_gender, u.region as author_region
       FROM comments c
       JOIN users u ON c.user_id = u.id
       WHERE c.id = $1`,

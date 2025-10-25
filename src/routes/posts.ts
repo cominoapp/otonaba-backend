@@ -2,7 +2,6 @@ import express, { Request, Response } from 'express';
 import { pool } from '../config/database.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 
-
 const router = express.Router();
 
 // 게시글 목록 조회 (검색 + 카테고리 필터 + 댓글 개수 + 좋아요 개수)
@@ -43,7 +42,7 @@ router.get('/', async (req: Request, res: Response) => {
       query += ' WHERE ' + conditions.join(' AND ');
     }
 
-    query += ` GROUP BY p.id, u.nickname, u.age_group ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    query += ` GROUP BY p.id, u.nickname, u.age_group, u.gender, u.region ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(Number(limit), offset);
 
     const result = await pool.query(query, params);
@@ -99,13 +98,13 @@ router.get('/:id', async (req: Request, res: Response) => {
       `SELECT 
         p.id, p.title, p.content, p.category, p.views, p.created_at, p.updated_at,
         p.user_id,
-        u.nickname as author_nickname, u.age_group as author_age_group,
+        u.nickname as author_nickname, u.age_group as author_age_group, u.gender as author_gender, u.region as author_region,
         COUNT(DISTINCT l.id) as like_count
       FROM posts p
       JOIN users u ON p.user_id = u.id
       LEFT JOIN likes l ON p.id = l.post_id
       WHERE p.id = $1
-      GROUP BY p.id, u.nickname, u.age_group`,
+      GROUP BY p.id, u.nickname, u.age_group, u.gender, u.region`,
       [id]
     );
 
